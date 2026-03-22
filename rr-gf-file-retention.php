@@ -36,8 +36,9 @@ spl_autoload_register( function ( string $class_name ): void {
         return;
     }
 
-    $relative = substr( $class_name, strlen( 'RR_' ) );
-    $filename = 'class-' . strtolower( str_replace( '_', '-', $relative ) ) . '.php';
+    // Strip the full prefix, then build the filename with the standard base.
+    $relative = substr( $class_name, strlen( $prefix ) );
+    $filename = 'class-rr-retention-' . strtolower( str_replace( '_', '-', $relative ) ) . '.php';
     $filepath = RR_GF_FILE_RETENTION_DIR . 'includes/' . $filename;
 
     if ( file_exists( $filepath ) ) {
@@ -46,70 +47,54 @@ spl_autoload_register( function ( string $class_name ): void {
 } );
 
 /**
- * Check for Gravity Forms dependency.
+ * Register the GF Add-On once Gravity Forms has loaded its framework.
  *
- * If GF is not active, show an admin notice and bail out.
+ * The addon's init() method boots the engine, cron, and CLI components.
  */
-function rr_gf_file_retention_check_dependencies(): bool {
+add_action( 'gform_loaded', function (): void {
+    if ( ! method_exists( 'GFForms', 'include_addon_framework' ) ) {
+        return;
+    }
+
+    \GFForms::include_addon_framework();
+    \GFAddOn::register( 'RR_Retention_Addon' );
+}, 5 );
+
+/**
+ * Show admin notice when Gravity Forms is not active.
+ *
+ * gform_loaded never fires if GF is deactivated, so the addon silently
+ * does nothing. This notice tells the admin why.
+ */
+add_action( 'plugins_loaded', function (): void {
     if ( class_exists( 'GFForms' ) ) {
-        return true;
+        return;
     }
 
     add_action( 'admin_notices', function (): void {
         $notice = new RR_Retention_Notice();
         $notice->dependency_missing();
     } );
-
-    return false;
-}
+} );
 
 /**
- * Initialize the plugin after all plugins have loaded.
+ * Load text domain for translations.
  */
-function rr_gf_file_retention_init(): void {
-    if ( ! rr_gf_file_retention_check_dependencies() ) {
-        return;
-    }
-
-    // Load text domain.
+add_action( 'plugins_loaded', function (): void {
     load_plugin_textdomain(
         'rr-gf-file-retention',
         false,
         dirname( RR_GF_FILE_RETENTION_BASENAME ) . '/languages'
     );
-
-    // Boot core components.
-    $logger   = new RR_Retention_Logger();
-    $settings = new RR_Retention_Settings();
-    $form     = new RR_Retention_Form();
-    $engine   = new RR_Retention_Engine( $settings, $logger );
-    $cron     = new RR_Retention_Cron( $engine, $settings );
-
-    $settings->init();
-    $form->init();
-    $cron->init();
-
-    // Register WP-CLI commands when available.
-    if ( defined( 'WP_CLI' ) && WP_CLI ) {
-        $cli = new RR_Retention_CLI( $engine, $settings, $logger );
-        $cli->register();
-    }
-}
-add_action( 'plugins_loaded', 'rr_gf_file_retention_init' );
+} );
 
 /**
  * Activation hook.
  *
- * Creates the custom log table and sets default options.
+ * Creates the custom log table. GFAddOn handles its own settings storage.
  */
 function rr_gf_file_retention_activate(): void {
-    // Create log table.
     RR_Retention_Logger::create_table();
-
-    // Set default settings if none exist.
-    if ( false === get_option( 'rr_gf_file_retention_settings' ) ) {
-        update_option( 'rr_gf_file_retention_settings', RR_Retention_Settings::defaults() );
-    }
 }
 register_activation_hook( RR_GF_FILE_RETENTION_FILE, 'rr_gf_file_retention_activate' );
 

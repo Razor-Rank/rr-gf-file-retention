@@ -8,6 +8,9 @@
  * Supports dry-run mode where all logic executes but no files are deleted
  * and no entries are modified.
  *
+ * Processes one batch per execution. The next scheduled run picks up
+ * remaining entries naturally since the query is date-based.
+ *
  * @package RR_GF_File_Retention
  * @since   1.0.0
  */
@@ -37,7 +40,7 @@ class RR_Retention_Engine {
      *     dry_run?: bool,
      *     days?: int,
      *     form_id?: int|null,
-     *     verbose?: bool,
+     *     batch_size?: int|null,
      * } $args Run-time overrides.
      * @return array{
      *     run_id: string,
@@ -50,10 +53,11 @@ class RR_Retention_Engine {
      * } Run statistics.
      */
     public function run( array $args = [] ): array {
-        $run_id  = wp_generate_uuid4();
-        $dry_run = $args['dry_run'] ?? $this->settings->get( 'dry_run', true );
-        $days    = $args['days'] ?? null;
-        $form_id = $args['form_id'] ?? null;
+        $run_id     = wp_generate_uuid4();
+        $dry_run    = $args['dry_run'] ?? $this->settings->get( 'dry_run', true );
+        $days       = $args['days'] ?? null;
+        $form_id    = $args['form_id'] ?? null;
+        $batch_size = $args['batch_size'] ?? (int) $this->settings->get( 'batch_size', 200 );
 
         $cutoff = $this->settings->get_cutoff_date( $days );
 
@@ -73,7 +77,7 @@ class RR_Retention_Engine {
             return $stats;
         }
 
-        $entries = $this->query_eligible_entries( $form_ids, $cutoff );
+        $entries = $this->query_eligible_entries( $form_ids, $cutoff, $batch_size );
 
         foreach ( $entries as $entry ) {
             $result = $this->process_entry( $entry, $run_id, $dry_run );
@@ -115,21 +119,33 @@ class RR_Retention_Engine {
     }
 
     /**
-     * Query GF entries older than the cutoff date on the target forms.
+     * Query one batch of GF entries older than the cutoff date.
      *
-     * @param int[]  $form_ids Target form IDs.
-     * @param string $cutoff   MySQL datetime cutoff string.
+     * Returns at most $batch_size entries, sorted oldest-first so repeated
+     * runs work through the backlog in chronological order.
+     *
+     * @param int[]  $form_ids   Target form IDs.
+     * @param string $cutoff     MySQL datetime cutoff string.
+     * @param int    $batch_size Max entries to return.
      * @return array GF entry arrays.
      */
-    private function query_eligible_entries( array $form_ids, string $cutoff ): array {
+    private function query_eligible_entries( array $form_ids, string $cutoff, int $batch_size = 200 ): array {
         $search_criteria = [
-            'status'        => 'active',
-            'field_filters' => [],
-            'start_date'    => null,
-            'end_date'      => $cutoff,
+            'status'   => 'active',
+            'end_date' => $cutoff,
         ];
 
-        $entries = \GFAPI::get_entries( $form_ids, $search_criteria );
+        $sorting = [
+            'key'       => 'date_created',
+            'direction' => 'ASC',
+        ];
+
+        $paging = [
+            'offset'    => 0,
+            'page_size' => $batch_size,
+        ];
+
+        $entries = \GFAPI::get_entries( $form_ids, $search_criteria, $sorting, $paging );
 
         return is_array( $entries ) ? $entries : [];
     }
@@ -137,8 +153,11 @@ class RR_Retention_Engine {
     /**
      * Process a single entry: find file fields, delete files, annotate.
      *
-     * @param array  $entry  GF entry array.
-     * @param string $run_id UUID for this run.
+     * Clears each file field individually but writes only one entry note
+     * listing all removed filenames across all fields.
+     *
+     * @param array  $entry   GF entry array.
+     * @param string $run_id  UUID for this run.
      * @param bool   $dry_run Whether this is a dry run.
      * @return array Per-entry result stats.
      */
@@ -152,12 +171,15 @@ class RR_Retention_Engine {
             'files'         => [],
         ];
 
-        $form         = \GFAPI::get_form( $entry['form_id'] );
+        $form          = \GFAPI::get_form( $entry['form_id'] );
         $upload_fields = $this->get_upload_fields( $form );
 
         if ( empty( $upload_fields ) ) {
             return $result;
         }
+
+        // Track which field IDs had successful deletions.
+        $fields_with_deletions = [];
 
         foreach ( $upload_fields as $field ) {
             $field_id = $field->id;
@@ -167,7 +189,8 @@ class RR_Retention_Engine {
                 continue;
             }
 
-            $file_urls = $this->parse_file_value( $value, $field );
+            $file_urls          = $this->parse_file_value( $value, $field );
+            $field_had_deletion = false;
 
             foreach ( $file_urls as $file_url ) {
                 $file_path = $this->url_to_path( $file_url );
@@ -187,7 +210,7 @@ class RR_Retention_Engine {
                         $error_msg = 'Path outside uploads directory, skipped.';
                         $result['errors']++;
                     } else {
-                        $deleted = wp_delete_file( $file_path );
+                        wp_delete_file( $file_path );
                         if ( file_exists( $file_path ) ) {
                             $action    = 'error';
                             $error_msg = 'wp_delete_file() did not remove the file.';
@@ -195,6 +218,7 @@ class RR_Retention_Engine {
                         } else {
                             $result['files_deleted']++;
                             $result['bytes_freed'] += $file_size;
+                            $field_had_deletion = true;
                         }
                     }
                 } else {
@@ -228,12 +252,25 @@ class RR_Retention_Engine {
                 ];
             }
 
-            // Clear the field value and add entry note (only if not dry run and files were deleted).
-            if ( ! $dry_run && $result['files_deleted'] > 0 ) {
+            // Clear this field's value if files were deleted from it.
+            if ( ! $dry_run && $field_had_deletion ) {
                 \GFAPI::update_entry_field( $entry['id'], $field_id, '' );
+                $fields_with_deletions[] = $field_id;
+            }
+        }
 
-                $filenames   = array_column( $result['files'], 'filename' );
-                $note_text   = $this->build_annotation( $entry['form_id'], implode( ', ', $filenames ) );
+        // Add ONE note per entry listing all deleted filenames across all fields.
+        if ( ! $dry_run && ! empty( $fields_with_deletions ) ) {
+            $deleted_filenames = array_map(
+                fn( array $f ): string => $f['filename'],
+                array_filter( $result['files'], fn( array $f ): bool => $f['action'] === 'deleted' )
+            );
+
+            if ( ! empty( $deleted_filenames ) ) {
+                $note_text = $this->build_annotation(
+                    $entry['form_id'],
+                    implode( ', ', $deleted_filenames )
+                );
                 \GFAPI::add_note( $entry['id'], 0, 'RR File Retention', $note_text );
             }
         }

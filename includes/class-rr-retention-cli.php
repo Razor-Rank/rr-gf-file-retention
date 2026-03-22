@@ -55,8 +55,15 @@ class RR_Retention_CLI {
      * [--dry-run]
      * : Preview what would be deleted without actually deleting.
      *
+     * [--live]
+     * : Force a live (non-dry-run) purge regardless of global setting.
+     * Mutually exclusive with --dry-run.
+     *
      * [--days=<n>]
      * : Override the retention period for this run.
+     *
+     * [--batch-size=<n>]
+     * : Override the batch size for this run.
      *
      * [--verbose]
      * : Show detailed per-file output.
@@ -65,25 +72,36 @@ class RR_Retention_CLI {
      *
      *     wp rr-retention run
      *     wp rr-retention run --form=5 --dry-run --verbose
-     *     wp rr-retention run --days=90
+     *     wp rr-retention run --live --days=90
+     *     wp rr-retention run --batch-size=500
      *
      * @param array $positional Positional arguments.
      * @param array $assoc      Associative arguments.
      */
     public function cmd_run( array $positional, array $assoc ): void {
-        $args = [
-            'dry_run' => \WP_CLI\Utils\get_flag_value( $assoc, 'dry-run', null ),
-            'form_id' => isset( $assoc['form'] ) ? (int) $assoc['form'] : null,
-            'days'    => isset( $assoc['days'] ) ? (int) $assoc['days'] : null,
-            'verbose' => \WP_CLI\Utils\get_flag_value( $assoc, 'verbose', false ),
-        ];
+        $has_dry_run = \WP_CLI\Utils\get_flag_value( $assoc, 'dry-run', null );
+        $has_live    = \WP_CLI\Utils\get_flag_value( $assoc, 'live', null );
 
-        // If --dry-run flag not passed, use null to defer to settings.
-        if ( $args['dry_run'] === null ) {
-            unset( $args['dry_run'] );
+        // Mutual exclusion check.
+        if ( $has_dry_run && $has_live ) {
+            \WP_CLI::error( 'Cannot use --dry-run and --live together. Pick one.' );
         }
 
-        $mode = ( $args['dry_run'] ?? $this->settings->get( 'dry_run' ) ) ? 'DRY RUN' : 'LIVE';
+        $args = [
+            'form_id'    => isset( $assoc['form'] ) ? (int) $assoc['form'] : null,
+            'days'       => isset( $assoc['days'] ) ? (int) $assoc['days'] : null,
+            'batch_size' => isset( $assoc['batch-size'] ) ? (int) $assoc['batch-size'] : null,
+        ];
+
+        // Set dry_run only when explicitly flagged; otherwise engine defers to global setting.
+        if ( $has_dry_run ) {
+            $args['dry_run'] = true;
+        } elseif ( $has_live ) {
+            $args['dry_run'] = false;
+        }
+
+        $effective_dry_run = $args['dry_run'] ?? $this->settings->get( 'dry_run', true );
+        $mode              = $effective_dry_run ? 'DRY RUN' : 'LIVE';
         \WP_CLI::log( "Starting purge run ({$mode})..." );
 
         $stats = $this->engine->run( $args );
@@ -127,13 +145,14 @@ class RR_Retention_CLI {
         $all = $this->settings->get_all();
 
         \WP_CLI::log( 'Global Settings:' );
-        \WP_CLI::log( sprintf( '  Enabled:    %s', $all['enabled'] ? 'Yes' : 'No' ) );
-        \WP_CLI::log( sprintf( '  Dry Run:    %s', $all['dry_run'] ? 'Yes' : 'No' ) );
-        \WP_CLI::log( sprintf( '  Retention:  %d %s', $all['retention_days'], $all['retention_unit'] ) );
-        \WP_CLI::log( sprintf( '  Target:     %s', is_array( $all['target_forms'] ) ? implode( ', ', $all['target_forms'] ) : $all['target_forms'] ) );
-        \WP_CLI::log( sprintf( '  Excluded:   %s', ! empty( $all['excluded_forms'] ) ? implode( ', ', $all['excluded_forms'] ) : 'None' ) );
-        \WP_CLI::log( sprintf( '  Logging:    %s', $all['log_actions'] ? 'Yes' : 'No' ) );
-        \WP_CLI::log( sprintf( '  Email:      %s', $all['email_notification'] ?: 'None' ) );
+        \WP_CLI::log( sprintf( '  Enabled:      %s', $all['enabled'] ? 'Yes' : 'No' ) );
+        \WP_CLI::log( sprintf( '  Dry Run:      %s', $all['dry_run'] ? 'Yes' : 'No' ) );
+        \WP_CLI::log( sprintf( '  Retention:    %d %s', $all['retention_days'], $all['retention_unit'] ) );
+        \WP_CLI::log( sprintf( '  Batch Size:   %d', $all['batch_size'] ) );
+        \WP_CLI::log( sprintf( '  Target:       %s', is_array( $all['target_forms'] ) ? implode( ', ', $all['target_forms'] ) : $all['target_forms'] ) );
+        \WP_CLI::log( sprintf( '  Excluded:     %s', ! empty( $all['excluded_forms'] ) ? implode( ', ', $all['excluded_forms'] ) : 'None' ) );
+        \WP_CLI::log( sprintf( '  Logging:      %s', $all['log_actions'] ? 'Yes' : 'No' ) );
+        \WP_CLI::log( sprintf( '  Email:        %s', $all['email_notification'] ?: 'None' ) );
     }
 
     /**
@@ -147,10 +166,14 @@ class RR_Retention_CLI {
      * [--days=<n>]
      * : Override the retention period for this preview.
      *
+     * [--batch-size=<n>]
+     * : Override the batch size for this preview.
+     *
      * ## EXAMPLES
      *
      *     wp rr-retention preview
      *     wp rr-retention preview --form=5 --days=60
+     *     wp rr-retention preview --batch-size=500
      *
      * @param array $positional Positional arguments.
      * @param array $assoc      Associative arguments.
@@ -158,6 +181,7 @@ class RR_Retention_CLI {
     public function cmd_preview( array $positional, array $assoc ): void {
         $assoc['dry-run'] = true;
         $assoc['verbose'] = true;
+        unset( $assoc['live'] );
 
         $this->cmd_run( $positional, $assoc );
     }
