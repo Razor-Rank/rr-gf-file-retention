@@ -90,6 +90,12 @@ class RR_Retention_Engine {
                 break;
             }
 
+            // Skip forms that have no file upload fields.
+            $form = \GFAPI::get_form( $form_id );
+            if ( is_array( $form ) && empty( $this->get_upload_fields( $form ) ) ) {
+                continue;
+            }
+
             $effective = $form_helper->get_effective_settings( $form_id, $this->settings );
 
             // Skip forms disabled via per-form override.

@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '0.3.1';
+    protected $_version                  = '0.3.2';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
