@@ -1,20 +1,68 @@
 /**
  * Gravity Forms File Retention by Razor Rank - Admin styles.
  *
- * Styles the dry-run preview results table on the settings page
- * to match GF's admin aesthetic.
+ * Styles the action buttons and results tables on the settings page.
  *
  * @package RR_GF_File_Retention
- * @since   1.0.0
+ * @since   0.3.0
  */
 
-/* Preview results table */
-.rr-retention-preview-table {
+/* Danger button for destructive "Run Cleanup Now" action */
+.rr-retention-btn-danger {
+    background: #d63638 !important;
+    border-color: #b32d2e !important;
+    color: #fff !important;
+}
+
+.rr-retention-btn-danger:hover,
+.rr-retention-btn-danger:focus {
+    background: #b32d2e !important;
+    border-color: #8a2424 !important;
+    color: #fff !important;
+}
+
+.rr-retention-btn-danger:disabled {
+    background: #d63638 !important;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Results header banner */
+.rr-retention-results-header {
     margin-top: 12px;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 14px;
+    border-radius: 3px 3px 0 0;
+    max-width: 900px;
+}
+
+.rr-retention-header-preview {
+    background: #f0f6fc;
+    border: 1px solid #72aee6;
+    border-bottom: none;
+    color: #2271b1;
+}
+
+.rr-retention-header-live {
+    background: #edfaef;
+    border: 1px solid #46b450;
+    border-bottom: none;
+    color: #1e7e34;
+}
+
+/* Results table */
+.rr-retention-preview-table {
     border: 1px solid #c3c4c7;
     border-collapse: collapse;
     width: 100%;
     max-width: 900px;
+    margin-top: 0;
+}
+
+.rr-retention-results-header + .rr-retention-preview-table {
+    border-top: none;
+    border-radius: 0 0 3px 3px;
 }
 
 .rr-retention-preview-table th,
@@ -54,8 +102,8 @@
     font-style: italic;
 }
 
-/* Preview results area notices */
-#rr-retention-preview-results .notice {
+/* Results area notices */
+#rr-retention-results .notice {
     margin: 12px 0 0;
     max-width: 900px;
 }

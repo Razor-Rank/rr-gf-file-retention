@@ -4,7 +4,7 @@ Tags: gravity forms, file uploads, retention, cleanup, storage
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.2.2
+Stable tag: 0.3.0
 License: Proprietary
 
 Automatically purges uploaded files attached to Gravity Forms entries after a configurable retention period.
@@ -42,6 +42,12 @@ Built by Razor Rank LLC for internal use across client sites.
 5. Disable Dry Run and enable the master switch when ready
 
 == Changelog ==
+
+= 0.3.0 =
+* Add "Run Cleanup Now" button with confirmation dialog for live deletion from settings page
+* Rename "Enable File Retention" toggle to "Enable Automatic File Cleanup" for clarity
+* Shared results table renderer for preview and live runs with distinct header styling
+* Red/warning styling on destructive cleanup button
 
 = 0.2.2 =
 * Fix: AJAX preview handler registered in init_ajax() for GFAddOn compatibility

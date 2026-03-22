@@ -1,24 +1,35 @@
 /**
  * Gravity Forms File Retention by Razor Rank - Settings page interactivity.
  *
- * Handles the "Run Preview" button: fires an AJAX dry-run, renders
- * a results table showing files that would be purged.
+ * Handles "Run Preview" (dry-run) and "Run Cleanup Now" (live deletion)
+ * buttons. Both render results in the same table format with different
+ * header styling to distinguish preview from live runs.
  *
  * @package RR_GF_File_Retention
- * @since   1.0.0
+ * @since   0.3.0
  */
 (function ($) {
     'use strict';
 
+    var $spinner = null;
+    var $results = null;
+
+    function getShared() {
+        if (!$spinner) $spinner = $('#rr-retention-spinner');
+        if (!$results) $results = $('#rr-retention-results');
+    }
+
+    // -----------------------------------------------------------------
+    // Run Preview (dry run)
+    // -----------------------------------------------------------------
     $(document).on('click', '#rr-retention-preview-btn', function (e) {
         e.preventDefault();
+        getShared();
 
-        var $btn     = $(this);
-        var $spinner = $('#rr-retention-preview-spinner');
-        var $results = $('#rr-retention-preview-results');
-        var nonce    = $btn.data('nonce');
+        var $btn  = $(this);
+        var nonce = $btn.data('nonce');
 
-        $btn.prop('disabled', true);
+        disableButtons(true);
         $spinner.addClass('is-active');
         $results.empty();
 
@@ -27,37 +38,94 @@
             nonce:  nonce
         })
         .done(function (response) {
-            $btn.prop('disabled', false);
+            disableButtons(false);
             $spinner.removeClass('is-active');
 
             if (!response.success) {
-                $results.html(
-                    '<div class="notice notice-error inline"><p>'
-                    + esc(response.data || 'Preview failed.')
-                    + '</p></div>'
-                );
+                showError(response.data || 'Preview failed.');
                 return;
             }
 
-            renderResults($results, response.data);
+            renderResults(response.data, true);
         })
         .fail(function () {
-            $btn.prop('disabled', false);
+            disableButtons(false);
             $spinner.removeClass('is-active');
-            $results.html(
-                '<div class="notice notice-error inline"><p>Request failed. Check your connection and try again.</p></div>'
-            );
+            showError('Request failed. Check your connection and try again.');
         });
     });
 
-    /**
-     * Render the preview results table.
-     */
-    function renderResults($container, data) {
-        var files = [];
-        var now   = Date.now();
+    // -----------------------------------------------------------------
+    // Run Cleanup Now (live deletion)
+    // -----------------------------------------------------------------
+    $(document).on('click', '#rr-retention-run-now-btn', function (e) {
+        e.preventDefault();
+        getShared();
 
-        // Flatten entry details into individual file rows.
+        var $btn  = $(this);
+        var nonce = $btn.data('nonce');
+        var days  = $btn.data('retention-days');
+        var unit  = $btn.data('retention-unit');
+
+        var msg = 'This will permanently delete uploaded files older than '
+            + days + ' ' + unit + ' from all targeted forms. '
+            + 'This cannot be undone. Continue?';
+
+        if (!confirm(msg)) {
+            return;
+        }
+
+        disableButtons(true);
+        $spinner.addClass('is-active');
+        $results.empty();
+
+        $.post(ajaxurl, {
+            action: 'rr_retention_run_now',
+            nonce:  nonce
+        })
+        .done(function (response) {
+            disableButtons(false);
+            $spinner.removeClass('is-active');
+
+            if (!response.success) {
+                showError(response.data || 'Cleanup failed.');
+                return;
+            }
+
+            renderResults(response.data, false);
+        })
+        .fail(function () {
+            disableButtons(false);
+            $spinner.removeClass('is-active');
+            showError('Request failed. Check your connection and try again.');
+        });
+    });
+
+    // -----------------------------------------------------------------
+    // Shared helpers
+    // -----------------------------------------------------------------
+
+    function disableButtons(disabled) {
+        $('#rr-retention-preview-btn, #rr-retention-run-now-btn').prop('disabled', disabled);
+    }
+
+    function showError(msg) {
+        getShared();
+        $results.html(
+            '<div class="notice notice-error inline"><p>' + esc(msg) + '</p></div>'
+        );
+    }
+
+    /**
+     * Render the results table for both preview and live runs.
+     *
+     * @param {Object}  data      Response data from the engine.
+     * @param {boolean} isDryRun  True for preview, false for live cleanup.
+     */
+    function renderResults(data, isDryRun) {
+        getShared();
+        var files = [];
+
         (data.details || []).forEach(function (entry) {
             (entry.files || []).forEach(function (file) {
                 files.push({
@@ -71,13 +139,23 @@
         });
 
         if (files.length === 0) {
-            $container.html(
-                '<div class="notice notice-info inline"><p>No files eligible for purging with current settings.</p></div>'
+            var emptyMsg = isDryRun
+                ? 'No files eligible for purging with current settings.'
+                : 'No files were found to clean up.';
+            $results.html(
+                '<div class="notice notice-info inline"><p>' + emptyMsg + '</p></div>'
             );
             return;
         }
 
-        var html = '<table class="rr-retention-preview-table widefat striped">'
+        // Header banner
+        var headerClass = isDryRun ? 'rr-retention-header-preview' : 'rr-retention-header-live';
+        var headerText  = isDryRun ? 'Preview Results' : 'Cleanup Complete';
+        var html = '<div class="rr-retention-results-header ' + headerClass + '">'
+            + esc(headerText) + '</div>';
+
+        // Table
+        html += '<table class="rr-retention-preview-table widefat striped">'
             + '<thead><tr>'
             + '<th>Entry</th>'
             + '<th>Form</th>'
@@ -102,17 +180,19 @@
             + '<th></th>'
             + '</tr></tfoot></table>';
 
+        // Summary line
+        var verb = isDryRun ? 'would be deleted' : 'deleted';
         html += '<p class="rr-retention-preview-note">'
-            + 'Processed ' + data.entries_processed + ' entr'
+            + files.length + ' file' + (files.length !== 1 ? 's' : '') + ' ' + verb
+            + ', ' + formatBytes(data.bytes_freed) + ' freed'
+            + ' from ' + data.entries_processed + ' entr'
             + (data.entries_processed !== 1 ? 'ies' : 'y')
-            + ' (dry run - nothing was deleted).</p>';
+            + (isDryRun ? ' (dry run - nothing was deleted)' : '')
+            + '.</p>';
 
-        $container.html(html);
+        $results.html(html);
     }
 
-    /**
-     * Format bytes into a human-readable string.
-     */
     function formatBytes(bytes) {
         if (!bytes || bytes === 0) return '0 B';
         var k     = 1024;
@@ -121,9 +201,6 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
-    /**
-     * Convert a date string to "X days ago".
-     */
     function daysAgo(dateStr) {
         if (!dateStr) return '-';
         var created = new Date(dateStr.replace(' ', 'T') + 'Z');
@@ -134,9 +211,6 @@
         return diff + ' days';
     }
 
-    /**
-     * Minimal HTML escaping.
-     */
     function esc(str) {
         var el = document.createElement('span');
         el.appendChild(document.createTextNode(str));
