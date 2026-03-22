@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '1.0.0';
+    protected $_version                  = '0.2.2';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
@@ -66,10 +66,13 @@ class RR_Retention_Addon extends \GFAddOn {
     }
 
     /**
-     * Admin-only initialization: register AJAX handlers.
+     * AJAX initialization: register handlers for admin-ajax.php requests.
+     *
+     * GFAddOn calls init_ajax() (not init_admin()) when RG_CURRENT_PAGE
+     * is admin-ajax.php, so AJAX actions must be registered here.
      */
-    public function init_admin(): void {
-        parent::init_admin();
+    public function init_ajax(): void {
+        parent::init_ajax();
 
         add_action( 'wp_ajax_rr_retention_preview', [ $this, 'ajax_preview' ] );
     }
