@@ -11,6 +11,9 @@
  * Processes one batch per execution. The next scheduled run picks up
  * remaining entries naturally since the query is date-based.
  *
+ * Per-form overrides are respected: each form is queried with its own
+ * effective retention period and enabled state.
+ *
  * @package RR_GF_File_Retention
  * @since   1.0.0
  */
@@ -36,6 +39,9 @@ class RR_Retention_Engine {
     /**
      * Execute a purge run.
      *
+     * Iterates each targeted form individually, resolving per-form overrides
+     * for retention period and enabled state before querying entries.
+     *
      * @param array{
      *     dry_run?: bool,
      *     days?: int,
@@ -53,13 +59,11 @@ class RR_Retention_Engine {
      * } Run statistics.
      */
     public function run( array $args = [] ): array {
-        $run_id     = wp_generate_uuid4();
-        $dry_run    = $args['dry_run'] ?? $this->settings->get( 'dry_run', true );
-        $days       = $args['days'] ?? null;
-        $form_id    = $args['form_id'] ?? null;
-        $batch_size = $args['batch_size'] ?? (int) $this->settings->get( 'batch_size', 200 );
-
-        $cutoff = $this->settings->get_cutoff_date( $days );
+        $run_id      = wp_generate_uuid4();
+        $dry_run     = $args['dry_run'] ?? $this->settings->get( 'dry_run', true );
+        $days_arg    = $args['days'] ?? null;
+        $form_id_arg = $args['form_id'] ?? null;
+        $batch_size  = $args['batch_size'] ?? (int) $this->settings->get( 'batch_size', 200 );
 
         $stats = [
             'run_id'            => $run_id,
@@ -71,22 +75,50 @@ class RR_Retention_Engine {
             'details'           => [],
         ];
 
-        $form_ids = $this->resolve_target_forms( $form_id );
+        $candidate_form_ids = $this->resolve_target_forms( $form_id_arg );
 
-        if ( empty( $form_ids ) ) {
+        if ( empty( $candidate_form_ids ) ) {
             return $stats;
         }
 
-        $entries = $this->query_eligible_entries( $form_ids, $cutoff, $batch_size );
+        $form_helper  = new RR_Retention_Form();
+        $remaining    = $batch_size;
 
-        foreach ( $entries as $entry ) {
-            $result = $this->process_entry( $entry, $run_id, $dry_run );
+        // Process each form with its own effective settings.
+        foreach ( $candidate_form_ids as $form_id ) {
+            if ( $remaining <= 0 ) {
+                break;
+            }
 
-            $stats['entries_processed']++;
-            $stats['files_deleted'] += $result['files_deleted'];
-            $stats['bytes_freed']   += $result['bytes_freed'];
-            $stats['errors']        += $result['errors'];
-            $stats['details'][]      = $result;
+            $effective = $form_helper->get_effective_settings( $form_id, $this->settings );
+
+            // Skip forms disabled via per-form override.
+            if ( ! empty( $effective['override_global'] ) && empty( $effective['enabled'] ) ) {
+                continue;
+            }
+
+            // Determine the cutoff date for this form.
+            // CLI --days override takes precedence over per-form settings.
+            if ( $days_arg !== null ) {
+                $cutoff = $this->settings->get_cutoff_date( $days_arg );
+            } else {
+                $form_days = (int) ( $effective['retention_days'] ?? $this->settings->get( 'retention_days', 30 ) );
+                $form_unit = $effective['retention_unit'] ?? $this->settings->get( 'retention_unit', 'days' );
+                $cutoff    = $this->calculate_cutoff( $form_days, $form_unit );
+            }
+
+            $entries = $this->query_eligible_entries( [ $form_id ], $cutoff, $remaining );
+
+            foreach ( $entries as $entry ) {
+                $result = $this->process_entry( $entry, $run_id, $dry_run );
+
+                $stats['entries_processed']++;
+                $stats['files_deleted'] += $result['files_deleted'];
+                $stats['bytes_freed']   += $result['bytes_freed'];
+                $stats['errors']        += $result['errors'];
+                $stats['details'][]      = $result;
+                $remaining--;
+            }
         }
 
         $this->maybe_send_notification( $stats );
@@ -95,7 +127,23 @@ class RR_Retention_Engine {
     }
 
     /**
+     * Calculate a cutoff date from a retention period.
+     *
+     * @param int    $days Number of days or months.
+     * @param string $unit 'days' or 'months'.
+     * @return string MySQL datetime string.
+     */
+    private function calculate_cutoff( int $days, string $unit ): string {
+        $interval = ( $unit === 'months' ) ? $days * 30 : $days;
+
+        return gmdate( 'Y-m-d H:i:s', strtotime( "-{$interval} days" ) );
+    }
+
+    /**
      * Determine which form IDs to target for this run.
+     *
+     * Returns candidate form IDs based on global target/exclude lists.
+     * Per-form enabled checks happen in run() after resolving effective settings.
      *
      * @param int|null $override_form_id Limit to a specific form.
      * @return int[] Array of form IDs.
