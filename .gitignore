@@ -1,0 +1,26 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node (if build tools are added later)
+node_modules/
+package-lock.json
+
+# Composer
+vendor/
+
+# WordPress
+wp-config.php
+wp-content/uploads/
+
+# Build artifacts
+*.zip
+*.tar.gz
+dist/
