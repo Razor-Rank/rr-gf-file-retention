@@ -230,9 +230,9 @@ class RR_Retention_Addon extends \GFAddOn {
     /**
      * Render the custom "Run Preview" button field.
      *
-     * @param array $field Field definition.
+     * @param array|object $field Field definition (array in GF <2.8, object in 2.9+).
      */
-    public function settings_rr_preview_button( array $field ): void {
+    public function settings_rr_preview_button( $field ): void {
         $nonce = wp_create_nonce( 'rr_retention_preview' );
 
         echo '<button type="button" id="rr-retention-preview-btn" class="button button-secondary" '
