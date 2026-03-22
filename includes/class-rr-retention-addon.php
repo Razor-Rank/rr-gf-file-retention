@@ -5,7 +5,8 @@
  * Extends GFAddOn to provide:
  * - Global settings page under Forms > Settings > File Retention
  * - Per-form settings tab under each form's Settings > File Retention
- * - RR chevron icon in the GF settings sidebar
+ * - Inline SVG icon in the GF settings sidebar
+ * - AJAX-powered dry-run preview on the settings page
  *
  * Boots the purge engine, cron scheduler, and WP-CLI commands on init.
  *
@@ -23,7 +24,7 @@ class RR_Retention_Addon extends \GFAddOn {
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
-    protected $_title                    = 'RR GF File Retention';
+    protected $_title                    = 'Gravity Forms File Retention by Razor Rank';
     protected $_short_title              = 'File Retention';
 
     private static ?self $_instance = null;
@@ -65,6 +66,15 @@ class RR_Retention_Addon extends \GFAddOn {
     }
 
     /**
+     * Admin-only initialization: register AJAX handlers.
+     */
+    public function init_admin(): void {
+        parent::init_admin();
+
+        add_action( 'wp_ajax_rr_retention_preview', [ $this, 'ajax_preview' ] );
+    }
+
+    /**
      * Minimum requirements for the addon.
      *
      * @return array
@@ -75,6 +85,51 @@ class RR_Retention_Addon extends \GFAddOn {
                 'version' => '2.5',
             ],
         ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Scripts and Styles
+    // -------------------------------------------------------------------------
+
+    /**
+     * Register scripts for the plugin settings page.
+     *
+     * @return array Script definitions.
+     */
+    public function scripts(): array {
+        $scripts = parent::scripts();
+
+        $scripts[] = [
+            'handle'  => 'rr-gf-file-retention-admin',
+            'src'     => $this->get_base_url() . '/assets/js/admin.js',
+            'version' => $this->_version,
+            'deps'    => [ 'jquery' ],
+            'enqueue' => [
+                [ 'admin_page' => [ 'plugin_settings' ] ],
+            ],
+        ];
+
+        return $scripts;
+    }
+
+    /**
+     * Register styles for the plugin settings page.
+     *
+     * @return array Style definitions.
+     */
+    public function styles(): array {
+        $styles = parent::styles();
+
+        $styles[] = [
+            'handle'  => 'rr-gf-file-retention-admin',
+            'src'     => $this->get_base_url() . '/assets/css/admin.css',
+            'version' => $this->_version,
+            'enqueue' => [
+                [ 'admin_page' => [ 'plugin_settings' ] ],
+            ],
+        ];
+
+        return $styles;
     }
 
     // -------------------------------------------------------------------------
@@ -159,7 +214,76 @@ class RR_Retention_Addon extends \GFAddOn {
                     ],
                 ],
             ],
+            [
+                'title'  => esc_html__( 'Preview', 'rr-gf-file-retention' ),
+                'fields' => [
+                    [
+                        'name'  => 'preview_button',
+                        'label' => esc_html__( 'Dry Run Preview', 'rr-gf-file-retention' ),
+                        'type'  => 'rr_preview_button',
+                    ],
+                ],
+            ],
         ];
+    }
+
+    /**
+     * Render the custom "Run Preview" button field.
+     *
+     * @param array $field Field definition.
+     */
+    public function settings_rr_preview_button( array $field ): void {
+        $nonce = wp_create_nonce( 'rr_retention_preview' );
+
+        echo '<button type="button" id="rr-retention-preview-btn" class="button button-secondary" '
+            . 'data-nonce="' . esc_attr( $nonce ) . '">'
+            . esc_html__( 'Run Preview', 'rr-gf-file-retention' )
+            . '</button> ';
+        echo '<span id="rr-retention-preview-spinner" class="spinner" style="float:none;vertical-align:middle;"></span>';
+        echo '<p class="description">'
+            . esc_html__( 'Runs the purge engine in dry-run mode with saved settings. Nothing is deleted.', 'rr-gf-file-retention' )
+            . '</p>';
+        echo '<div id="rr-retention-preview-results"></div>';
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Dry-run preview
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handle the AJAX preview request.
+     *
+     * Runs the engine in dry-run mode and returns enriched results as JSON.
+     */
+    public function ajax_preview(): void {
+        check_ajax_referer( 'rr_retention_preview', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Insufficient permissions.' );
+        }
+
+        $logger   = new RR_Retention_Logger();
+        $settings = new RR_Retention_Settings();
+        $engine   = new RR_Retention_Engine( $settings, $logger );
+
+        $stats = $engine->run( [ 'dry_run' => true ] );
+
+        // Enrich each entry detail with the form name.
+        $form_names = [];
+
+        foreach ( $stats['details'] as &$detail ) {
+            $fid = (int) $detail['form_id'];
+
+            if ( ! isset( $form_names[ $fid ] ) ) {
+                $form = \GFAPI::get_form( $fid );
+                $form_names[ $fid ] = is_array( $form ) ? $form['title'] : 'Form ' . $fid;
+            }
+
+            $detail['form_name'] = $form_names[ $fid ];
+        }
+        unset( $detail );
+
+        wp_send_json_success( $stats );
     }
 
     // -------------------------------------------------------------------------
@@ -242,11 +366,19 @@ class RR_Retention_Addon extends \GFAddOn {
     // -------------------------------------------------------------------------
 
     /**
-     * Return the icon URL for the GF Settings sidebar.
+     * Return an inline SVG icon for the GF Settings sidebar.
      *
-     * @return string URL to the RR chevron icon.
+     * Uses an inline SVG (document + clock) so it scales properly at any
+     * size. Replaces the previous 128px PNG which rendered oversized.
+     *
+     * @return string Inline SVG markup.
      */
     public function get_menu_icon(): string {
-        return $this->get_base_url() . '/assets/images/icon-128.png';
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">'
+            . '<path d="M11 1H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5a5.5 5.5 0 0 1-.5-2.3'
+            . 'A5.5 5.5 0 0 1 13.5 11c.5 0 1 .07 1.5.2V7l-4-6ZM10 3v5h5"/>'
+            . '<circle cx="13.5" cy="15.5" r="3.8" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+            . '<path d="M13.5 13.5v2l1.5 1.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'
+            . '</svg>';
     }
 }

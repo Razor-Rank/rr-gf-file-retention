@@ -165,6 +165,7 @@ class RR_Retention_Engine {
         $result = [
             'entry_id'      => $entry['id'],
             'form_id'       => $entry['form_id'],
+            'date_created'  => $entry['date_created'] ?? '',
             'files_deleted' => 0,
             'bytes_freed'   => 0,
             'errors'        => 0,

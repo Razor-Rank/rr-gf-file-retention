@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: RR GF File Retention
+ * Plugin Name: Gravity Forms File Retention by Razor Rank
  * Plugin URI:  https://github.com/Razor-Rank/rr-gf-file-retention
  * Description: Automatically purges uploaded files attached to Gravity Forms entries after a configurable retention period. Preserves entry data and annotates removals.
  * Version:     1.0.0

@@ -21,7 +21,7 @@ class RR_Retention_Notice {
     public function dependency_missing(): void {
         $message = sprintf(
             /* translators: %s: plugin name "Gravity Forms" */
-            __( '<strong>RR GF File Retention</strong> requires %s to be installed and activated.', 'rr-gf-file-retention' ),
+            __( '<strong>Gravity Forms File Retention by Razor Rank</strong> requires %s to be installed and activated.', 'rr-gf-file-retention' ),
             '<strong>Gravity Forms</strong>'
         );
 
