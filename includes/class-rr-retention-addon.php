@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '0.4.0';
+    protected $_version                  = '0.4.1';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
@@ -275,7 +275,12 @@ class RR_Retention_Addon extends \GFAddOn {
             . esc_html__( 'Run Cleanup Now', 'rr-gf-file-retention' )
             . '</button> ';
 
-        echo '<span id="rr-retention-spinner" class="spinner" style="float:none;vertical-align:middle;"></span>';
+        echo '<span id="rr-retention-spinner" class="spinner" style="float:none;vertical-align:middle;"></span> ';
+
+        // Clear Results link (inline with buttons, hidden until results are displayed).
+        echo '<a href="#" id="rr-retention-clear-results" class="rr-retention-clear-link" style="display:none;">'
+            . esc_html__( 'Clear Results', 'rr-gf-file-retention' )
+            . '</a>';
 
         echo '<p class="description">'
             . esc_html__( 'Preview shows what would be deleted. Cleanup Now permanently deletes files matching saved settings.', 'rr-gf-file-retention' )

@@ -114,11 +114,13 @@
     font-style: italic;
 }
 
-/* Clear Results link */
+/* Clear Results link (inline with buttons) */
 .rr-retention-clear-link {
     color: #b32d2e;
     text-decoration: none;
     font-size: 13px;
+    margin-left: 8px;
+    vertical-align: middle;
 }
 
 .rr-retention-clear-link:hover {

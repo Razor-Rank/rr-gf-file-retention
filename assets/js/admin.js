@@ -2,55 +2,94 @@
  * Gravity Forms File Retention by Razor Rank - Settings page interactivity.
  *
  * Handles "Run Preview" (dry-run) and "Run Cleanup Now" (live deletion)
- * buttons. Both render results in the same table format with different
- * header styling to distinguish preview from live runs.
+ * buttons with a proper state machine controlling button enabled/disabled
+ * state and Clear Results visibility.
+ *
+ * States:
+ *   idle         - Preview enabled, Cleanup disabled, Clear hidden
+ *   loading      - Both disabled, spinner active
+ *   has_results  - Preview enabled, Cleanup enabled, Clear visible
+ *   after_cleanup - Preview enabled, Cleanup disabled, Clear visible
  *
  * @package RR_GF_File_Retention
- * @since   0.4.0
+ * @since   0.4.1
  */
 (function ($) {
     'use strict';
 
-    var $spinner = null;
-    var $results = null;
+    // -----------------------------------------------------------------
+    // State machine
+    // -----------------------------------------------------------------
 
-    function getShared() {
-        if (!$spinner) $spinner = $('#rr-retention-spinner');
-        if (!$results) $results = $('#rr-retention-results');
+    function setState(state) {
+        var $preview = $('#rr-retention-preview-btn');
+        var $cleanup = $('#rr-retention-run-now-btn');
+        var $clear   = $('#rr-retention-clear-results');
+        var $spinner = $('#rr-retention-spinner');
+
+        switch (state) {
+            case 'idle':
+                $preview.prop('disabled', false);
+                $cleanup.prop('disabled', true);
+                $clear.hide();
+                $spinner.removeClass('is-active');
+                break;
+
+            case 'loading':
+                $preview.prop('disabled', true);
+                $cleanup.prop('disabled', true);
+                $clear.hide();
+                $spinner.addClass('is-active');
+                break;
+
+            case 'has_results':
+                $preview.prop('disabled', false);
+                $cleanup.prop('disabled', false);
+                $clear.show();
+                $spinner.removeClass('is-active');
+                break;
+
+            case 'after_cleanup':
+                $preview.prop('disabled', false);
+                $cleanup.prop('disabled', true);
+                $clear.show();
+                $spinner.removeClass('is-active');
+                break;
+        }
     }
+
+    // Initialize: Cleanup disabled until a preview has run.
+    $(function () {
+        setState('idle');
+    });
 
     // -----------------------------------------------------------------
     // Run Preview (dry run)
     // -----------------------------------------------------------------
     $(document).on('click', '#rr-retention-preview-btn', function (e) {
         e.preventDefault();
-        getShared();
 
-        var $btn  = $(this);
-        var nonce = $btn.data('nonce');
+        var nonce = $(this).data('nonce');
 
-        disableButtons(true);
-        $spinner.addClass('is-active');
-        $results.empty();
+        setState('loading');
+        $('#rr-retention-results').empty();
 
         $.post(ajaxurl, {
             action: 'rr_retention_preview',
             nonce:  nonce
         })
         .done(function (response) {
-            disableButtons(false);
-            $spinner.removeClass('is-active');
-
             if (!response.success) {
+                setState('idle');
                 showError(response.data || 'Preview failed.');
                 return;
             }
 
-            renderResults(response.data, true);
+            var hasFiles = renderResults(response.data, true);
+            setState(hasFiles ? 'has_results' : 'idle');
         })
         .fail(function () {
-            disableButtons(false);
-            $spinner.removeClass('is-active');
+            setState('idle');
             showError('Request failed. Check your connection and try again.');
         });
     });
@@ -60,7 +99,6 @@
     // -----------------------------------------------------------------
     $(document).on('click', '#rr-retention-run-now-btn', function (e) {
         e.preventDefault();
-        getShared();
 
         var $btn       = $(this);
         var nonce      = $btn.data('nonce');
@@ -86,32 +124,25 @@
             return;
         }
 
-        disableButtons(true);
-        $spinner.addClass('is-active');
-        $results.empty();
+        setState('loading');
+        $('#rr-retention-results').empty();
 
         $.post(ajaxurl, {
             action: 'rr_retention_run_now',
             nonce:  nonce
         })
         .done(function (response) {
-            $spinner.removeClass('is-active');
-
             if (!response.success) {
-                disableButtons(false);
+                setState('idle');
                 showError(response.data || 'Cleanup failed.');
                 return;
             }
 
-            // After live cleanup: keep Run Cleanup Now disabled, re-enable Preview.
-            $('#rr-retention-preview-btn').prop('disabled', false);
-            $('#rr-retention-run-now-btn').prop('disabled', true);
-
             renderResults(response.data, false);
+            setState('after_cleanup');
         })
         .fail(function () {
-            disableButtons(false);
-            $spinner.removeClass('is-active');
+            setState('idle');
             showError('Request failed. Check your connection and try again.');
         });
     });
@@ -121,22 +152,16 @@
     // -----------------------------------------------------------------
     $(document).on('click', '#rr-retention-clear-results', function (e) {
         e.preventDefault();
-        getShared();
-        $results.empty();
-        disableButtons(false);
+        $('#rr-retention-results').empty();
+        setState('idle');
     });
 
     // -----------------------------------------------------------------
     // Shared helpers
     // -----------------------------------------------------------------
 
-    function disableButtons(disabled) {
-        $('#rr-retention-preview-btn, #rr-retention-run-now-btn').prop('disabled', disabled);
-    }
-
     function showError(msg) {
-        getShared();
-        $results.html(
+        $('#rr-retention-results').html(
             '<div class="notice notice-error inline"><p>' + esc(msg) + '</p></div>'
         );
     }
@@ -146,9 +171,10 @@
      *
      * @param {Object}  data      Response data from the engine.
      * @param {boolean} isDryRun  True for preview, false for live cleanup.
+     * @return {boolean} True if files were found/displayed.
      */
     function renderResults(data, isDryRun) {
-        getShared();
+        var $container = $('#rr-retention-results');
         var files = [];
 
         (data.details || []).forEach(function (entry) {
@@ -167,10 +193,10 @@
             var emptyMsg = isDryRun
                 ? 'No files eligible for purging with current settings.'
                 : 'No files were found to clean up.';
-            $results.html(
+            $container.html(
                 '<div class="notice notice-info inline"><p>' + emptyMsg + '</p></div>'
             );
-            return;
+            return false;
         }
 
         // Header banner with summary inside it.
@@ -224,10 +250,8 @@
             + (isDryRun ? ' (dry run - nothing was deleted)' : '')
             + '.</p>';
 
-        // Clear Results link
-        html += '<p><a href="#" id="rr-retention-clear-results" class="rr-retention-clear-link">Clear Results</a></p>';
-
-        $results.html(html);
+        $container.html(html);
+        return true;
     }
 
     function formatBytes(bytes) {
