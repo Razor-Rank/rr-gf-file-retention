@@ -4,7 +4,7 @@ Tags: gravity forms, file uploads, retention, cleanup, storage
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.3.2
+Stable tag: 0.3.3
 License: Proprietary
 
 Automatically purges uploaded files attached to Gravity Forms entries after a configurable retention period.
@@ -42,6 +42,9 @@ Built by Razor Rank LLC for internal use across client sites.
 5. Disable Dry Run and enable the master switch when ready
 
 == Changelog ==
+
+= 0.3.3 =
+* Fix: Query only entries with non-empty file fields via direct DB join, preventing dead-entry batch exhaustion
 
 = 0.3.2 =
 * Fix: Skip forms without file upload fields in purge loop to prevent batch exhaustion

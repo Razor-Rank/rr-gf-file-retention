@@ -91,8 +91,10 @@ class RR_Retention_Engine {
             }
 
             // Skip forms that have no file upload fields.
-            $form = \GFAPI::get_form( $form_id );
-            if ( is_array( $form ) && empty( $this->get_upload_fields( $form ) ) ) {
+            $form          = \GFAPI::get_form( $form_id );
+            $upload_fields = is_array( $form ) ? $this->get_upload_fields( $form ) : [];
+
+            if ( empty( $upload_fields ) ) {
                 continue;
             }
 
@@ -113,7 +115,15 @@ class RR_Retention_Engine {
                 $cutoff    = $this->calculate_cutoff( $form_days, $form_unit );
             }
 
-            $entries = $this->query_eligible_entries( [ $form_id ], $cutoff, $remaining );
+            // Query only entries that have non-empty file upload values.
+            $upload_field_ids = array_map( fn( $f ) => (string) $f->id, $upload_fields );
+            $entry_ids        = $this->query_entry_ids_with_files( $form_id, $upload_field_ids, $cutoff, $remaining );
+
+            if ( empty( $entry_ids ) ) {
+                continue;
+            }
+
+            $entries = array_filter( array_map( '\\GFAPI::get_entry', $entry_ids ), 'is_array' );
 
             foreach ( $entries as $entry ) {
                 $result = $this->process_entry( $entry, $run_id, $dry_run );
@@ -173,35 +183,52 @@ class RR_Retention_Engine {
     }
 
     /**
-     * Query one batch of GF entries older than the cutoff date.
+     * Query entry IDs that have non-empty file upload values.
      *
-     * Returns at most $batch_size entries, sorted oldest-first so repeated
-     * runs work through the backlog in chronological order.
+     * Uses a direct database query joining gf_entry with gf_entry_meta
+     * to skip entries whose file fields are empty or have been cleared by
+     * previous runs. Only entries with actual file URLs count against the
+     * batch limit.
      *
-     * @param int[]  $form_ids   Target form IDs.
-     * @param string $cutoff     MySQL datetime cutoff string.
-     * @param int    $batch_size Max entries to return.
-     * @return array GF entry arrays.
+     * @param int      $form_id          Target form ID.
+     * @param string[] $upload_field_ids Meta keys for file upload fields.
+     * @param string   $cutoff           MySQL datetime cutoff string.
+     * @param int      $batch_size       Max entries to return.
+     * @return int[] Entry IDs.
      */
-    private function query_eligible_entries( array $form_ids, string $cutoff, int $batch_size = 200 ): array {
-        $search_criteria = [
-            'status'   => 'active',
-            'end_date' => $cutoff,
-        ];
+    private function query_entry_ids_with_files( int $form_id, array $upload_field_ids, string $cutoff, int $batch_size ): array {
+        global $wpdb;
 
-        $sorting = [
-            'key'       => 'date_created',
-            'direction' => 'ASC',
-        ];
+        $entry_table = $wpdb->prefix . 'gf_entry';
+        $meta_table  = $wpdb->prefix . 'gf_entry_meta';
 
-        $paging = [
-            'offset'    => 0,
-            'page_size' => $batch_size,
-        ];
+        $field_placeholders = implode( ',', array_fill( 0, count( $upload_field_ids ), '%s' ) );
 
-        $entries = \GFAPI::get_entries( $form_ids, $search_criteria, $sorting, $paging );
+        $query_args = array_merge(
+            [ $form_id, $cutoff ],
+            $upload_field_ids,
+            [ $batch_size ]
+        );
 
-        return is_array( $entries ) ? $entries : [];
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $sql = $wpdb->prepare(
+            "SELECT DISTINCT e.id
+            FROM {$entry_table} e
+            INNER JOIN {$meta_table} em ON e.id = em.entry_id
+            WHERE e.form_id = %d
+              AND e.status = 'active'
+              AND e.date_created < %s
+              AND em.meta_key IN ({$field_placeholders})
+              AND em.meta_value IS NOT NULL
+              AND em.meta_value != ''
+            ORDER BY e.date_created ASC
+            LIMIT %d",
+            $query_args
+        );
+
+        $results = $wpdb->get_col( $sql );
+
+        return array_map( 'intval', $results );
     }
 
     /**
