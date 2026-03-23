@@ -6,7 +6,7 @@
  * - Global settings page under Forms > Settings > File Retention
  * - Per-form settings tab under each form's Settings > File Retention
  * - Inline SVG icon in the GF settings sidebar
- * - AJAX-powered dry-run preview and live cleanup on the settings page
+ * - AJAX-powered preview, live cleanup, and log viewer on the settings page
  *
  * Boots the purge engine, cron scheduler, and WP-CLI commands on init.
  *
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '0.4.1';
+    protected $_version                  = '0.5.0';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
@@ -29,9 +29,6 @@ class RR_Retention_Addon extends \GFAddOn {
 
     private static ?self $_instance = null;
 
-    /**
-     * Singleton accessor.
-     */
     public static function get_instance(): self {
         if ( self::$_instance === null ) {
             self::$_instance = new self();
@@ -46,9 +43,6 @@ class RR_Retention_Addon extends \GFAddOn {
         parent::__construct();
     }
 
-    /**
-     * Boot operational components after GF and the addon are ready.
-     */
     public function init(): void {
         parent::init();
 
@@ -65,24 +59,14 @@ class RR_Retention_Addon extends \GFAddOn {
         }
     }
 
-    /**
-     * AJAX initialization: register handlers for admin-ajax.php requests.
-     *
-     * GFAddOn calls init_ajax() (not init_admin()) when RG_CURRENT_PAGE
-     * is admin-ajax.php, so AJAX actions must be registered here.
-     */
     public function init_ajax(): void {
         parent::init_ajax();
 
         add_action( 'wp_ajax_rr_retention_preview', [ $this, 'ajax_preview' ] );
         add_action( 'wp_ajax_rr_retention_run_now', [ $this, 'ajax_run_now' ] );
+        add_action( 'wp_ajax_rr_retention_get_log', [ $this, 'ajax_get_log' ] );
     }
 
-    /**
-     * Minimum requirements for the addon.
-     *
-     * @return array
-     */
     public function minimum_requirements(): array {
         return [
             'gravityforms' => [
@@ -95,11 +79,6 @@ class RR_Retention_Addon extends \GFAddOn {
     // Scripts and Styles
     // -------------------------------------------------------------------------
 
-    /**
-     * Register scripts for the plugin settings page.
-     *
-     * @return array Script definitions.
-     */
     public function scripts(): array {
         $scripts = parent::scripts();
 
@@ -116,11 +95,6 @@ class RR_Retention_Addon extends \GFAddOn {
         return $scripts;
     }
 
-    /**
-     * Register styles for the plugin settings page.
-     *
-     * @return array Style definitions.
-     */
     public function styles(): array {
         $styles = parent::styles();
 
@@ -140,11 +114,6 @@ class RR_Retention_Addon extends \GFAddOn {
     // Global plugin settings (Forms > Settings > File Retention)
     // -------------------------------------------------------------------------
 
-    /**
-     * Define the global settings fields.
-     *
-     * @return array GF settings field arrays.
-     */
     public function plugin_settings_fields(): array {
         return [
             [
@@ -156,6 +125,7 @@ class RR_Retention_Addon extends \GFAddOn {
                         'type'          => 'toggle',
                         'default_value' => false,
                         'tooltip'       => esc_html__( 'Master switch. When enabled, uploaded files older than the retention period are automatically cleaned up on the daily schedule.', 'rr-gf-file-retention' ),
+                        'description'   => esc_html__( 'Cleanup runs daily via WP-Cron. WP-Cron depends on site traffic to trigger. For guaranteed scheduling on low-traffic sites, add a server cron: 0 3 * * * /usr/local/bin/wp rr-retention run --path=/path/to/site/ --allow-root', 'rr-gf-file-retention' ),
                     ],
                     [
                         'name'          => 'dry_run',
@@ -228,13 +198,25 @@ class RR_Retention_Addon extends \GFAddOn {
                     ],
                 ],
             ],
+            [
+                'title'  => esc_html__( 'Retention Log', 'rr-gf-file-retention' ),
+                'fields' => [
+                    [
+                        'name'  => 'log_viewer',
+                        'label' => esc_html__( 'Recent Activity', 'rr-gf-file-retention' ),
+                        'type'  => 'rr_log_viewer',
+                    ],
+                ],
+            ],
         ];
     }
 
+    // -------------------------------------------------------------------------
+    // Custom field renderers
+    // -------------------------------------------------------------------------
+
     /**
-     * Render the action buttons field (Preview + Cleanup Now).
-     *
-     * @param array|object $field Field definition.
+     * Render the action buttons (Preview + Cleanup Now + Clear Results).
      */
     public function settings_rr_action_buttons( $field ): void {
         $preview_nonce = wp_create_nonce( 'rr_retention_preview' );
@@ -260,7 +242,7 @@ class RR_Retention_Addon extends \GFAddOn {
             }
         }
 
-        // Preview button (neutral).
+        // Preview button.
         echo '<button type="button" id="rr-retention-preview-btn" class="button button-secondary" '
             . 'data-nonce="' . esc_attr( $preview_nonce ) . '">'
             . esc_html__( 'Run Preview', 'rr-gf-file-retention' )
@@ -275,12 +257,12 @@ class RR_Retention_Addon extends \GFAddOn {
             . esc_html__( 'Run Cleanup Now', 'rr-gf-file-retention' )
             . '</button> ';
 
-        echo '<span id="rr-retention-spinner" class="spinner" style="float:none;vertical-align:middle;"></span> ';
-
-        // Clear Results link (inline with buttons, hidden until results are displayed).
+        // Clear Results link (hidden until results displayed).
         echo '<a href="#" id="rr-retention-clear-results" class="rr-retention-clear-link" style="display:none;">'
             . esc_html__( 'Clear Results', 'rr-gf-file-retention' )
-            . '</a>';
+            . '</a> ';
+
+        echo '<span id="rr-retention-spinner" class="spinner" style="float:none;vertical-align:middle;"></span>';
 
         echo '<p class="description">'
             . esc_html__( 'Preview shows what would be deleted. Cleanup Now permanently deletes files matching saved settings.', 'rr-gf-file-retention' )
@@ -289,13 +271,27 @@ class RR_Retention_Addon extends \GFAddOn {
         echo '<div id="rr-retention-results"></div>';
     }
 
+    /**
+     * Render the log viewer placeholder (loaded via AJAX).
+     */
+    public function settings_rr_log_viewer( $field ): void {
+        $nonce = wp_create_nonce( 'rr_retention_get_log' );
+
+        echo '<button type="button" id="rr-retention-refresh-log" class="button button-secondary" '
+            . 'data-nonce="' . esc_attr( $nonce ) . '">'
+            . esc_html__( 'Refresh Log', 'rr-gf-file-retention' )
+            . '</button> ';
+        echo '<span id="rr-retention-log-spinner" class="spinner" style="float:none;vertical-align:middle;"></span>';
+
+        echo '<div id="rr-retention-log-container"><p class="description">'
+            . esc_html__( 'Loading...', 'rr-gf-file-retention' )
+            . '</p></div>';
+    }
+
     // -------------------------------------------------------------------------
     // AJAX handlers
     // -------------------------------------------------------------------------
 
-    /**
-     * Handle the AJAX preview request (dry run).
-     */
     public function ajax_preview(): void {
         check_ajax_referer( 'rr_retention_preview', 'nonce' );
 
@@ -303,14 +299,9 @@ class RR_Retention_Addon extends \GFAddOn {
             wp_send_json_error( 'Insufficient permissions.' );
         }
 
-        $stats = $this->run_engine( true );
-
-        wp_send_json_success( $stats );
+        wp_send_json_success( $this->run_engine( true ) );
     }
 
-    /**
-     * Handle the AJAX "Run Cleanup Now" request (live deletion).
-     */
     public function ajax_run_now(): void {
         check_ajax_referer( 'rr_retention_run_now', 'nonce' );
 
@@ -318,16 +309,42 @@ class RR_Retention_Addon extends \GFAddOn {
             wp_send_json_error( 'Insufficient permissions.' );
         }
 
-        $stats = $this->run_engine( false );
+        wp_send_json_success( $this->run_engine( false ) );
+    }
 
-        wp_send_json_success( $stats );
+    /**
+     * Handle the AJAX log viewer request.
+     */
+    public function ajax_get_log(): void {
+        check_ajax_referer( 'rr_retention_get_log', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Insufficient permissions.' );
+        }
+
+        $logger = new RR_Retention_Logger();
+        $rows   = $logger->query( [ 'limit' => 50 ] );
+
+        // Enrich with form names.
+        $form_names = [];
+
+        foreach ( $rows as &$row ) {
+            $fid = (int) $row['form_id'];
+
+            if ( ! isset( $form_names[ $fid ] ) ) {
+                $form = \GFAPI::get_form( $fid );
+                $form_names[ $fid ] = is_array( $form ) ? $form['title'] : 'Form ' . $fid;
+            }
+
+            $row['form_name'] = $form_names[ $fid ];
+        }
+        unset( $row );
+
+        wp_send_json_success( $rows );
     }
 
     /**
      * Run the purge engine and enrich results with form names.
-     *
-     * @param bool $dry_run Whether to run in dry-run mode.
-     * @return array Enriched run statistics.
      */
     private function run_engine( bool $dry_run ): array {
         $logger   = new RR_Retention_Logger();
@@ -336,7 +353,6 @@ class RR_Retention_Addon extends \GFAddOn {
 
         $stats = $engine->run( [ 'dry_run' => $dry_run ] );
 
-        // Enrich each entry detail with the form name.
         $form_names = [];
 
         foreach ( $stats['details'] as &$detail ) {
@@ -358,12 +374,6 @@ class RR_Retention_Addon extends \GFAddOn {
     // Per-form settings (Form Settings > File Retention tab)
     // -------------------------------------------------------------------------
 
-    /**
-     * Define the per-form settings fields.
-     *
-     * @param array $form Current form object.
-     * @return array GF settings field arrays.
-     */
     public function form_settings_fields( $form ): array {
         return [
             [
@@ -433,11 +443,6 @@ class RR_Retention_Addon extends \GFAddOn {
     // Branding
     // -------------------------------------------------------------------------
 
-    /**
-     * Return an inline SVG icon for the GF Settings sidebar.
-     *
-     * @return string Inline SVG markup.
-     */
     public function get_menu_icon(): string {
         return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">'
             . '<path d="M11 1H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5a5.5 5.5 0 0 1-.5-2.3'

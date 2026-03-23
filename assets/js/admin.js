@@ -1,25 +1,18 @@
 /**
  * Gravity Forms File Retention by Razor Rank - Settings page interactivity.
  *
- * Handles "Run Preview" (dry-run) and "Run Cleanup Now" (live deletion)
- * buttons with a proper state machine controlling button enabled/disabled
- * state and Clear Results visibility.
- *
- * States:
- *   idle         - Preview enabled, Cleanup disabled, Clear hidden
- *   loading      - Both disabled, spinner active
- *   has_results  - Preview enabled, Cleanup enabled, Clear visible
- *   after_cleanup - Preview enabled, Cleanup disabled, Clear visible
+ * Handles "Run Preview", "Run Cleanup Now", "Clear Results", and the
+ * Retention Log viewer with proper state management.
  *
  * @package RR_GF_File_Retention
- * @since   0.4.1
+ * @since   0.5.0
  */
 (function ($) {
     'use strict';
 
-    // -----------------------------------------------------------------
-    // State machine
-    // -----------------------------------------------------------------
+    // =================================================================
+    // State machine for action buttons
+    // =================================================================
 
     function setState(state) {
         var $preview = $('#rr-retention-preview-btn');
@@ -58,14 +51,15 @@
         }
     }
 
-    // Initialize: Cleanup disabled until a preview has run.
+    // Initialize on DOM ready.
     $(function () {
         setState('idle');
+        loadLog();
     });
 
-    // -----------------------------------------------------------------
+    // =================================================================
     // Run Preview (dry run)
-    // -----------------------------------------------------------------
+    // =================================================================
     $(document).on('click', '#rr-retention-preview-btn', function (e) {
         e.preventDefault();
 
@@ -74,17 +68,13 @@
         setState('loading');
         $('#rr-retention-results').empty();
 
-        $.post(ajaxurl, {
-            action: 'rr_retention_preview',
-            nonce:  nonce
-        })
+        $.post(ajaxurl, { action: 'rr_retention_preview', nonce: nonce })
         .done(function (response) {
             if (!response.success) {
                 setState('idle');
                 showError(response.data || 'Preview failed.');
                 return;
             }
-
             var hasFiles = renderResults(response.data, true);
             setState(hasFiles ? 'has_results' : 'idle');
         })
@@ -94,21 +84,19 @@
         });
     });
 
-    // -----------------------------------------------------------------
+    // =================================================================
     // Run Cleanup Now (live deletion)
-    // -----------------------------------------------------------------
+    // =================================================================
     $(document).on('click', '#rr-retention-run-now-btn', function (e) {
         e.preventDefault();
 
-        var $btn       = $(this);
-        var nonce      = $btn.data('nonce');
-        var days       = $btn.data('retention-days');
-        var unit       = $btn.data('retention-unit');
-        var overrides  = $btn.data('form-overrides') || [];
+        var $btn      = $(this);
+        var nonce     = $btn.data('nonce');
+        var days      = $btn.data('retention-days');
+        var unit      = $btn.data('retention-unit');
+        var overrides = $btn.data('form-overrides') || [];
 
-        // Build confirm message with per-form overrides.
         var msg = 'This will permanently delete uploaded files using these retention settings:\n';
-
         if (overrides.length) {
             overrides.forEach(function (o) {
                 msg += '  - ' + o.form + ': ' + o.days + ' ' + o.unit + '\n';
@@ -117,7 +105,6 @@
         } else {
             msg += '  - All forms: ' + days + ' ' + unit + '\n';
         }
-
         msg += '\nThis cannot be undone. Continue?';
 
         if (!confirm(msg)) {
@@ -127,19 +114,17 @@
         setState('loading');
         $('#rr-retention-results').empty();
 
-        $.post(ajaxurl, {
-            action: 'rr_retention_run_now',
-            nonce:  nonce
-        })
+        $.post(ajaxurl, { action: 'rr_retention_run_now', nonce: nonce })
         .done(function (response) {
             if (!response.success) {
                 setState('idle');
                 showError(response.data || 'Cleanup failed.');
                 return;
             }
-
             renderResults(response.data, false);
             setState('after_cleanup');
+            // Refresh the log after a live cleanup.
+            loadLog();
         })
         .fail(function () {
             setState('idle');
@@ -147,18 +132,93 @@
         });
     });
 
-    // -----------------------------------------------------------------
+    // =================================================================
     // Clear Results
-    // -----------------------------------------------------------------
+    // =================================================================
     $(document).on('click', '#rr-retention-clear-results', function (e) {
         e.preventDefault();
         $('#rr-retention-results').empty();
         setState('idle');
     });
 
-    // -----------------------------------------------------------------
+    // =================================================================
+    // Log Viewer
+    // =================================================================
+    $(document).on('click', '#rr-retention-refresh-log', function (e) {
+        e.preventDefault();
+        loadLog();
+    });
+
+    function loadLog() {
+        var $container = $('#rr-retention-log-container');
+        var $spinner   = $('#rr-retention-log-spinner');
+        var $btn       = $('#rr-retention-refresh-log');
+        var nonce      = $btn.data('nonce');
+
+        if (!$container.length || !nonce) return;
+
+        $btn.prop('disabled', true);
+        $spinner.addClass('is-active');
+
+        $.post(ajaxurl, { action: 'rr_retention_get_log', nonce: nonce })
+        .done(function (response) {
+            $btn.prop('disabled', false);
+            $spinner.removeClass('is-active');
+
+            if (!response.success) {
+                $container.html('<p class="description">Failed to load log.</p>');
+                return;
+            }
+
+            renderLog($container, response.data);
+        })
+        .fail(function () {
+            $btn.prop('disabled', false);
+            $spinner.removeClass('is-active');
+            $container.html('<p class="description">Failed to load log.</p>');
+        });
+    }
+
+    function renderLog($container, rows) {
+        if (!rows || rows.length === 0) {
+            $container.html('<p class="description">No log entries yet.</p>');
+            return;
+        }
+
+        var html = '<table class="rr-retention-log-table widefat striped">'
+            + '<thead><tr>'
+            + '<th>Date</th>'
+            + '<th>Entry</th>'
+            + '<th>Form</th>'
+            + '<th>Filename</th>'
+            + '<th>Size</th>'
+            + '<th>Action</th>'
+            + '<th>Error</th>'
+            + '</tr></thead><tbody>';
+
+        rows.forEach(function (r) {
+            var actionClass = r.action === 'error' ? 'rr-log-error'
+                : r.action === 'deleted' ? 'rr-log-deleted'
+                : 'rr-log-dryrun';
+
+            html += '<tr>'
+                + '<td>' + esc(r.created_at) + '</td>'
+                + '<td>#' + r.entry_id + '</td>'
+                + '<td>' + esc(r.form_name || 'Form ' + r.form_id) + '</td>'
+                + '<td>' + esc(r.filename) + '</td>'
+                + '<td>' + formatBytes(r.file_size) + '</td>'
+                + '<td><span class="rr-log-action ' + actionClass + '">' + esc(r.action) + '</span></td>'
+                + '<td>' + (r.error_message ? esc(r.error_message) : '-') + '</td>'
+                + '</tr>';
+        });
+
+        html += '</tbody></table>';
+        $container.html(html);
+    }
+
+    // =================================================================
     // Shared helpers
-    // -----------------------------------------------------------------
+    // =================================================================
 
     function showError(msg) {
         $('#rr-retention-results').html(
@@ -166,13 +226,6 @@
         );
     }
 
-    /**
-     * Render the results table for both preview and live runs.
-     *
-     * @param {Object}  data      Response data from the engine.
-     * @param {boolean} isDryRun  True for preview, false for live cleanup.
-     * @return {boolean} True if files were found/displayed.
-     */
     function renderResults(data, isDryRun) {
         var $container = $('#rr-retention-results');
         var files = [];
@@ -193,13 +246,10 @@
             var emptyMsg = isDryRun
                 ? 'No files eligible for purging with current settings.'
                 : 'No files were found to clean up.';
-            $container.html(
-                '<div class="notice notice-info inline"><p>' + emptyMsg + '</p></div>'
-            );
+            $container.html('<div class="notice notice-info inline"><p>' + emptyMsg + '</p></div>');
             return false;
         }
 
-        // Header banner with summary inside it.
         var headerClass = isDryRun ? 'rr-retention-header-preview' : 'rr-retention-header-live';
         var headerTitle = isDryRun ? 'Preview Results' : 'Cleanup Complete';
         var verb        = isDryRun ? 'found' : 'deleted';
@@ -214,15 +264,8 @@
             + '<span class="rr-retention-header-summary">' + esc(summaryText) + '</span>'
             + '</div>';
 
-        // Table
         html += '<table class="rr-retention-preview-table widefat striped">'
-            + '<thead><tr>'
-            + '<th>Entry</th>'
-            + '<th>Form</th>'
-            + '<th>Filename</th>'
-            + '<th>Size</th>'
-            + '<th>Age</th>'
-            + '</tr></thead><tbody>';
+            + '<thead><tr><th>Entry</th><th>Form</th><th>Filename</th><th>Size</th><th>Age</th></tr></thead><tbody>';
 
         files.forEach(function (f) {
             html += '<tr>'
@@ -236,11 +279,9 @@
 
         html += '</tbody><tfoot><tr>'
             + '<th colspan="3">Total: ' + files.length + ' file' + (files.length !== 1 ? 's' : '') + '</th>'
-            + '<th>' + formatBytes(data.bytes_freed) + '</th>'
-            + '<th></th>'
+            + '<th>' + formatBytes(data.bytes_freed) + '</th><th></th>'
             + '</tr></tfoot></table>';
 
-        // Bottom summary
         var bottomVerb = isDryRun ? 'would be deleted' : 'deleted';
         html += '<p class="rr-retention-preview-note">'
             + files.length + ' file' + (files.length !== 1 ? 's' : '') + ' ' + bottomVerb

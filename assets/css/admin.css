@@ -1,10 +1,8 @@
 /**
  * Gravity Forms File Retention by Razor Rank - Admin styles.
  *
- * Styles the action buttons and results tables on the settings page.
- *
  * @package RR_GF_File_Retention
- * @since   0.4.0
+ * @since   0.5.0
  */
 
 /* Danger button for destructive "Run Cleanup Now" action */
@@ -25,6 +23,19 @@
     background: #d63638 !important;
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+/* Clear Results link (inline with buttons) */
+.rr-retention-clear-link {
+    color: #b32d2e;
+    text-decoration: none;
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+.rr-retention-clear-link:hover {
+    color: #8a2424;
+    text-decoration: underline;
 }
 
 /* Results header banner */
@@ -99,7 +110,7 @@
     background: #f0f6fc;
 }
 
-/* Size and age columns - right-align for numeric data */
+/* Size and age columns - right-align */
 .rr-retention-preview-table td:nth-child(4),
 .rr-retention-preview-table th:nth-child(4),
 .rr-retention-preview-table td:nth-child(5),
@@ -107,29 +118,76 @@
     text-align: right;
 }
 
-/* Summary note below the table */
+/* Summary note */
 .rr-retention-preview-note {
     margin-top: 8px;
     color: #646970;
     font-style: italic;
 }
 
-/* Clear Results link (inline with buttons) */
-.rr-retention-clear-link {
-    color: #b32d2e;
-    text-decoration: none;
-    font-size: 13px;
-    margin-left: 8px;
-    vertical-align: middle;
-}
-
-.rr-retention-clear-link:hover {
-    color: #8a2424;
-    text-decoration: underline;
-}
-
-/* Results area notices */
+/* Results notices */
 #rr-retention-results .notice {
     margin: 12px 0 0;
     max-width: 900px;
+}
+
+/* ================================================================= */
+/* Retention Log table                                                */
+/* ================================================================= */
+
+.rr-retention-log-table {
+    margin-top: 8px;
+    border: 1px solid #c3c4c7;
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 1100px;
+    font-size: 13px;
+}
+
+.rr-retention-log-table th,
+.rr-retention-log-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid #e1e1e1;
+}
+
+.rr-retention-log-table thead th {
+    background: #f6f7f7;
+    font-weight: 600;
+    color: #1d2327;
+    white-space: nowrap;
+}
+
+.rr-retention-log-table tbody tr:hover {
+    background: #f0f6fc;
+}
+
+/* Size column right-align */
+.rr-retention-log-table td:nth-child(5),
+.rr-retention-log-table th:nth-child(5) {
+    text-align: right;
+}
+
+/* Action badges */
+.rr-log-action {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.rr-log-deleted {
+    background: #edfaef;
+    color: #1e7e34;
+}
+
+.rr-log-dryrun {
+    background: #f0f6fc;
+    color: #2271b1;
+}
+
+.rr-log-error {
+    background: #fcf0f1;
+    color: #d63638;
 }

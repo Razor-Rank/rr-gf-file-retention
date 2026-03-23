@@ -68,6 +68,9 @@ class RR_Retention_Cron {
 
     /**
      * Cron callback: execute the purge if enabled and not in dry-run mode.
+     *
+     * WARNING: On staging sites with no traffic, WP-Cron may not fire.
+     * Use `wp rr-retention run` via server cron for reliable scheduling.
      */
     public function execute(): void {
         if ( ! $this->settings->get( 'enabled', false ) ) {

@@ -4,7 +4,7 @@ Tags: gravity forms, file uploads, retention, cleanup, storage
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.4.1
+Stable tag: 0.5.0
 License: Proprietary
 
 Automatically purges uploaded files attached to Gravity Forms entries after a configurable retention period.
@@ -42,6 +42,15 @@ Built by Razor Rank LLC for internal use across client sites.
 5. Disable Dry Run and enable the master switch when ready
 
 == Changelog ==
+
+= 0.5.0 =
+* Add Retention Log viewer section to settings page (AJAX-loaded, 50 most recent entries)
+* Add Refresh Log button; log auto-refreshes after live cleanup
+* Action badges in log: green (deleted), blue (dry_run), red (error)
+* Add WP-Cron guidance note below the Enable toggle with server cron example
+* Add staging cron warning comment to execute() method
+* Clear Results link repositioned inline with buttons (no whitespace gap when hidden)
+* Log viewer loads asynchronously on page load, does not block settings render
 
 = 0.4.1 =
 * Fix: Cleanup button disabled on page load and whenever results are empty
