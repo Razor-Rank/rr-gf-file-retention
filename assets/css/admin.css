@@ -4,7 +4,7 @@
  * Styles the action buttons and results tables on the settings page.
  *
  * @package RR_GF_File_Retention
- * @since   0.3.0
+ * @since   0.4.0
  */
 
 /* Danger button for destructive "Run Cleanup Now" action */
@@ -31,10 +31,22 @@
 .rr-retention-results-header {
     margin-top: 12px;
     padding: 8px 12px;
-    font-weight: 600;
     font-size: 14px;
     border-radius: 3px 3px 0 0;
     max-width: 900px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.rr-retention-header-title {
+    font-weight: 600;
+}
+
+.rr-retention-header-summary {
+    font-weight: 400;
+    font-size: 13px;
+    opacity: 0.85;
 }
 
 .rr-retention-header-preview {
@@ -100,6 +112,18 @@
     margin-top: 8px;
     color: #646970;
     font-style: italic;
+}
+
+/* Clear Results link */
+.rr-retention-clear-link {
+    color: #b32d2e;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.rr-retention-clear-link:hover {
+    color: #8a2424;
+    text-decoration: underline;
 }
 
 /* Results area notices */

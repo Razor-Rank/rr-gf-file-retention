@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '0.3.3';
+    protected $_version                  = '0.4.0';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
@@ -240,9 +240,25 @@ class RR_Retention_Addon extends \GFAddOn {
         $preview_nonce = wp_create_nonce( 'rr_retention_preview' );
         $run_nonce     = wp_create_nonce( 'rr_retention_run_now' );
 
-        $settings      = new RR_Retention_Settings();
+        $settings       = new RR_Retention_Settings();
         $retention_days = (int) $settings->get( 'retention_days', 30 );
         $retention_unit = $settings->get( 'retention_unit', 'days' );
+
+        // Build per-form override list for the confirm dialog.
+        $form_overrides = [];
+        $forms          = \GFAPI::get_forms();
+
+        foreach ( $forms as $gf_form ) {
+            $form_meta = $this->get_form_settings( $gf_form );
+
+            if ( is_array( $form_meta ) && ! empty( $form_meta['override_global'] ) ) {
+                $form_overrides[] = [
+                    'form' => $gf_form['title'],
+                    'days' => (int) ( $form_meta['retention_days'] ?? $retention_days ),
+                    'unit' => $form_meta['retention_unit'] ?? $retention_unit,
+                ];
+            }
+        }
 
         // Preview button (neutral).
         echo '<button type="button" id="rr-retention-preview-btn" class="button button-secondary" '
@@ -254,7 +270,8 @@ class RR_Retention_Addon extends \GFAddOn {
         echo '<button type="button" id="rr-retention-run-now-btn" class="button rr-retention-btn-danger" '
             . 'data-nonce="' . esc_attr( $run_nonce ) . '" '
             . 'data-retention-days="' . esc_attr( (string) $retention_days ) . '" '
-            . 'data-retention-unit="' . esc_attr( $retention_unit ) . '">'
+            . 'data-retention-unit="' . esc_attr( $retention_unit ) . '" '
+            . 'data-form-overrides="' . esc_attr( wp_json_encode( $form_overrides ) ) . '">'
             . esc_html__( 'Run Cleanup Now', 'rr-gf-file-retention' )
             . '</button> ';
 

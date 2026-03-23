@@ -6,7 +6,7 @@
  * header styling to distinguish preview from live runs.
  *
  * @package RR_GF_File_Retention
- * @since   0.3.0
+ * @since   0.4.0
  */
 (function ($) {
     'use strict';
@@ -62,14 +62,25 @@
         e.preventDefault();
         getShared();
 
-        var $btn  = $(this);
-        var nonce = $btn.data('nonce');
-        var days  = $btn.data('retention-days');
-        var unit  = $btn.data('retention-unit');
+        var $btn       = $(this);
+        var nonce      = $btn.data('nonce');
+        var days       = $btn.data('retention-days');
+        var unit       = $btn.data('retention-unit');
+        var overrides  = $btn.data('form-overrides') || [];
 
-        var msg = 'This will permanently delete uploaded files older than '
-            + days + ' ' + unit + ' from all targeted forms. '
-            + 'This cannot be undone. Continue?';
+        // Build confirm message with per-form overrides.
+        var msg = 'This will permanently delete uploaded files using these retention settings:\n';
+
+        if (overrides.length) {
+            overrides.forEach(function (o) {
+                msg += '  - ' + o.form + ': ' + o.days + ' ' + o.unit + '\n';
+            });
+            msg += '  - All other forms: ' + days + ' ' + unit + '\n';
+        } else {
+            msg += '  - All forms: ' + days + ' ' + unit + '\n';
+        }
+
+        msg += '\nThis cannot be undone. Continue?';
 
         if (!confirm(msg)) {
             return;
@@ -84,13 +95,17 @@
             nonce:  nonce
         })
         .done(function (response) {
-            disableButtons(false);
             $spinner.removeClass('is-active');
 
             if (!response.success) {
+                disableButtons(false);
                 showError(response.data || 'Cleanup failed.');
                 return;
             }
+
+            // After live cleanup: keep Run Cleanup Now disabled, re-enable Preview.
+            $('#rr-retention-preview-btn').prop('disabled', false);
+            $('#rr-retention-run-now-btn').prop('disabled', true);
 
             renderResults(response.data, false);
         })
@@ -99,6 +114,16 @@
             $spinner.removeClass('is-active');
             showError('Request failed. Check your connection and try again.');
         });
+    });
+
+    // -----------------------------------------------------------------
+    // Clear Results
+    // -----------------------------------------------------------------
+    $(document).on('click', '#rr-retention-clear-results', function (e) {
+        e.preventDefault();
+        getShared();
+        $results.empty();
+        disableButtons(false);
     });
 
     // -----------------------------------------------------------------
@@ -148,11 +173,20 @@
             return;
         }
 
-        // Header banner
+        // Header banner with summary inside it.
         var headerClass = isDryRun ? 'rr-retention-header-preview' : 'rr-retention-header-live';
-        var headerText  = isDryRun ? 'Preview Results' : 'Cleanup Complete';
+        var headerTitle = isDryRun ? 'Preview Results' : 'Cleanup Complete';
+        var verb        = isDryRun ? 'found' : 'deleted';
+        var summaryText = files.length + ' file' + (files.length !== 1 ? 's' : '') + ' ' + verb
+            + ', ' + formatBytes(data.bytes_freed)
+            + (isDryRun ? ' total size' : ' freed')
+            + ' from ' + data.entries_processed + ' entr'
+            + (data.entries_processed !== 1 ? 'ies' : 'y');
+
         var html = '<div class="rr-retention-results-header ' + headerClass + '">'
-            + esc(headerText) + '</div>';
+            + '<span class="rr-retention-header-title">' + esc(headerTitle) + '</span>'
+            + '<span class="rr-retention-header-summary">' + esc(summaryText) + '</span>'
+            + '</div>';
 
         // Table
         html += '<table class="rr-retention-preview-table widefat striped">'
@@ -180,21 +214,24 @@
             + '<th></th>'
             + '</tr></tfoot></table>';
 
-        // Summary line
-        var verb = isDryRun ? 'would be deleted' : 'deleted';
+        // Bottom summary
+        var bottomVerb = isDryRun ? 'would be deleted' : 'deleted';
         html += '<p class="rr-retention-preview-note">'
-            + files.length + ' file' + (files.length !== 1 ? 's' : '') + ' ' + verb
+            + files.length + ' file' + (files.length !== 1 ? 's' : '') + ' ' + bottomVerb
             + ', ' + formatBytes(data.bytes_freed) + ' freed'
             + ' from ' + data.entries_processed + ' entr'
             + (data.entries_processed !== 1 ? 'ies' : 'y')
             + (isDryRun ? ' (dry run - nothing was deleted)' : '')
             + '.</p>';
 
+        // Clear Results link
+        html += '<p><a href="#" id="rr-retention-clear-results" class="rr-retention-clear-link">Clear Results</a></p>';
+
         $results.html(html);
     }
 
     function formatBytes(bytes) {
-        if (!bytes || bytes === 0) return '0 B';
+        if (!bytes || bytes === 0) return 'N/A';
         var k     = 1024;
         var sizes = ['B', 'KB', 'MB', 'GB'];
         var i     = Math.floor(Math.log(bytes) / Math.log(k));
