@@ -1,4 +1,7 @@
 <?php
+// This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.
+
 /**
  * Gravity Forms Add-On: registers global and per-form settings via GF's native framework.
  *
@@ -20,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RR_Retention_Addon extends \GFAddOn {
 
-    protected $_version                  = '0.5.0';
+    protected $_version                  = '1.0.0';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug                     = 'rr-gf-file-retention';
     protected $_path                     = 'rr-gf-file-retention/rr-gf-file-retention.php';
@@ -199,11 +202,11 @@ class RR_Retention_Addon extends \GFAddOn {
                 ],
             ],
             [
-                'title'  => esc_html__( 'Retention Log', 'rr-gf-file-retention' ),
+                'title'  => esc_html__( 'Purge History', 'rr-gf-file-retention' ),
                 'fields' => [
                     [
                         'name'  => 'log_viewer',
-                        'label' => esc_html__( 'Recent Activity', 'rr-gf-file-retention' ),
+                        'label' => esc_html__( 'Purge History', 'rr-gf-file-retention' ),
                         'type'  => 'rr_log_viewer',
                     ],
                 ],

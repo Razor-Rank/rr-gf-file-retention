@@ -4,8 +4,9 @@ Tags: gravity forms, file uploads, retention, cleanup, storage
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
-Stable tag: 0.5.0
-License: Proprietary
+Stable tag: 1.0.0
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Automatically purges uploaded files attached to Gravity Forms entries after a configurable retention period.
 
@@ -42,6 +43,28 @@ Built by Razor Rank LLC for internal use across client sites.
 5. Disable Dry Run and enable the master switch when ready
 
 == Changelog ==
+
+= 1.0.0 =
+Production release. Full feature set:
+
+* Automatic daily file cleanup via WP-Cron with configurable retention period
+* Global settings page under Forms > Settings > File Retention (GFAddOn native)
+* Per-form retention overrides: custom retention period, enable/disable per form
+* Dry-run mode: preview what would be purged without deleting anything
+* Run Preview and Run Cleanup Now buttons on the settings page
+* Confirmation dialog lists per-form overrides before destructive action
+* Purge History log viewer with color-coded action badges (AJAX-loaded)
+* Batch processing: configurable batch size, one batch per run, oldest-first
+* Smart query: only entries with non-empty file upload fields count against batch
+* Forms without file upload fields skipped automatically
+* Per-entry annotation via GFAPI::add_note() with customizable template
+* Custom audit log table with full deletion history
+* WP-CLI commands: run, status, preview, log (with --live, --dry-run, --batch-size, --form, --days flags)
+* Email notification summaries after each purge run
+* Inline SVG icon in GF settings sidebar
+* Path validation against wp_upload_dir() base to prevent directory traversal
+* Supports single and multi-file upload fields
+* WordPress 6.0+, Gravity Forms 2.5+, PHP 8.0+
 
 = 0.5.0 =
 * Add Retention Log viewer section to settings page (AJAX-loaded, 50 most recent entries)

@@ -25,12 +25,14 @@
     cursor: not-allowed;
 }
 
-/* Clear Results link (inline with buttons) */
+/* Clear Results link (inline with buttons, same baseline) */
 .rr-retention-clear-link {
     color: #b32d2e;
     text-decoration: none;
     font-size: 13px;
+    margin-left: 16px;
     vertical-align: middle;
+    line-height: 30px;
 }
 
 .rr-retention-clear-link:hover {

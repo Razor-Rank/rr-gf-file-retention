@@ -187,7 +187,7 @@
 
         var html = '<table class="rr-retention-log-table widefat striped">'
             + '<thead><tr>'
-            + '<th>Date</th>'
+            + '<th>Purged On</th>'
             + '<th>Entry</th>'
             + '<th>Form</th>'
             + '<th>Filename</th>'
