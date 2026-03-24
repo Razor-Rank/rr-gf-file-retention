@@ -20,6 +20,9 @@ vendor/
 wp-config.php
 wp-content/uploads/
 
+# Internal docs
+rr-gf-file-retention-spec.md
+
 # Build artifacts
 *.zip
 *.tar.gz
